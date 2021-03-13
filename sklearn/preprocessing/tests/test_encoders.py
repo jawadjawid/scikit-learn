@@ -522,13 +522,21 @@ def test_one_hot_encoder_drop_equals_if_binary():
     [['abc', 2, 55], ['def', 1, 55]],
     np.array([[10, 2, 55], [20, 1, 55]]),
     np.array([['a', 'B', 'cat'], ['b', 'A', 'cat']], dtype=object)
-    ], ids=['mixed', 'numeric', 'object'])
+    ], ids=['mixed', 'numeric', 'object']
+    )
 def test_ordinal_encoder(X):
-    enc = OrdinalEncoder()
+    if all([isinstance(Xi, str) for Xi in X[0]]):
+        enc = OrdinalEncoder(categories='lexicographic')
+    else:
+        enc = OrdinalEncoder()
     exp = np.array([[0, 1, 0],
                     [1, 0, 0]], dtype='int64')
     assert_array_equal(enc.fit_transform(X), exp.astype('float64'))
-    enc = OrdinalEncoder(dtype='int64')
+
+    if all([isinstance(Xi, str) for Xi in X[0]]):
+        enc = OrdinalEncoder(dtype='int64', categories='lexicographic')
+    else:
+        enc = OrdinalEncoder(dtype='int64')
     assert_array_equal(enc.fit_transform(X), exp)
 
 
@@ -575,9 +583,11 @@ def test_ordinal_encoder_inverse():
 
 
 def test_ordinal_encoder_handle_unknowns_string():
-    enc = OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-2)
+    enc = OrdinalEncoder(handle_unknown='use_encoded_value',
+                         unknown_value=-2, categories='lexicographic')
     X_fit = np.array([['a', 'x'], ['b', 'y'], ['c', 'z']], dtype=object)
     X_trans = np.array([['c', 'xy'], ['bla', 'y'], ['a', 'x']], dtype=object)
+
     enc.fit(X_fit)
 
     X_trans_enc = enc.transform(X_trans)
@@ -645,7 +655,11 @@ def test_ordinal_encoder_handle_unknowns_raise(params, err_type, err_msg):
     # Check error message when validating input parameters
     X = np.array([['a', 'x'], ['b', 'y']], dtype=object)
 
-    encoder = OrdinalEncoder(**params)
+    if all([isinstance(Xi, str) for Xi in X[0]]):
+        encoder = OrdinalEncoder(**params, categories='lexicographic')
+    else:
+        encoder = OrdinalEncoder(**params)
+
     with pytest.raises(err_type, match=err_msg):
         encoder.fit(X)
 
@@ -774,15 +788,15 @@ def test_one_hot_encoder_drop_manual(missing_value):
 @pytest.mark.parametrize(
     "X_fit, params, err_msg",
     [([["Male"], ["Female"]], {'drop': 'second'},
-     "Wrong input for parameter `drop`"),
+      "Wrong input for parameter `drop`"),
      ([["Male"], ["Female"]], {'drop': 'first', 'handle_unknown': 'ignore'},
-     "`handle_unknown` must be 'error'"),
+      "`handle_unknown` must be 'error'"),
      ([['abc', 2, 55], ['def', 1, 55], ['def', 3, 59]],
       {'drop': np.asarray('b', dtype=object)},
-     "Wrong input for parameter `drop`"),
+      "Wrong input for parameter `drop`"),
      ([['abc', 2, 55], ['def', 1, 55], ['def', 3, 59]],
       {'drop': ['ghi', 3, 59]},
-     "The following categories were supposed")]
+      "The following categories were supposed")]
 )
 def test_one_hot_encoder_invalid_params(X_fit, params, err_msg):
     enc = OneHotEncoder(**params)
@@ -960,7 +974,7 @@ def test_ordinal_encoder_missing_value_support_pandas_categorical(pd_nan_type):
                           dtype='category'),
     })
 
-    oe = OrdinalEncoder().fit(df)
+    oe = OrdinalEncoder(categories='lexicographic').fit(df)
     assert len(oe.categories_) == 1
     assert_array_equal(oe.categories_[0][:3], ['a', 'b', 'c'])
     assert np.isnan(oe.categories_[0][-1])
@@ -979,13 +993,13 @@ def test_ordinal_encoder_missing_value_support_pandas_categorical(pd_nan_type):
 @pytest.mark.parametrize("X, X2, cats, cat_dtype", [
     ((np.array([['a', np.nan]], dtype=object).T,
       np.array([['a', 'b']], dtype=object).T,
-     [np.array(['a', np.nan, 'd'], dtype=object)], np.object_)),
+      [np.array(['a', np.nan, 'd'], dtype=object)], np.object_)),
     ((np.array([['a', np.nan]], dtype=object).T,
       np.array([['a', 'b']], dtype=object).T,
-     [np.array(['a', np.nan, 'd'], dtype=object)], np.object_)),
+      [np.array(['a', np.nan, 'd'], dtype=object)], np.object_)),
     ((np.array([[2.0, np.nan]], dtype=np.float64).T,
       np.array([[3.0]], dtype=np.float64).T,
-     [np.array([2.0, 4.0, np.nan])], np.float64)),
+      [np.array([2.0, 4.0, np.nan])], np.float64)),
     ], ids=['object-None-missing-value', 'object-nan-missing_value',
             'numeric-missing-value'])
 def test_ordinal_encoder_specified_categories_missing_passthrough(
@@ -1023,11 +1037,72 @@ def test_ordinal_encoder_handle_missing_and_unknown(
         X, expected_X_trans, X_test
 ):
     """Test the interaction between missing values and handle_unknown"""
-
-    oe = OrdinalEncoder(handle_unknown="use_encoded_value",
-                        unknown_value=-1)
+    if all([isinstance(Xi, str) for Xi in X[0]]):
+        oe = OrdinalEncoder(handle_unknown="use_encoded_value",
+                            unknown_value=-1, categories='lexicographic')
+    else:
+        oe = OrdinalEncoder(
+            handle_unknown="use_encoded_value", unknown_value=-1)
 
     X_trans = oe.fit_transform(X)
     assert_allclose(X_trans, expected_X_trans)
 
     assert_allclose(oe.transform(X_test), [[-1.0]])
+
+
+def test_one_hot_encoder_warning_with_natural():
+    enc = OneHotEncoder(categories='natural')
+    X = [['Male', 1], ['Female', 3]]
+    with pytest.raises(ValueError,
+                       match="Shape mismatch: Only OrdinalEncoder supports natural categories"):
+        enc.fit_transform(X)
+
+
+def test_one_hot_encoder_warning_with_lexicographic():
+    enc = OneHotEncoder(categories='lexicographic')
+    X = [['Male', 1], ['Female', 3]]
+    with pytest.raises(ValueError,
+                       match="Shape mismatch: Only OrdinalEncoder supports lexicographic categories"):
+        enc.fit_transform(X)
+
+
+def test_ordinal_encoder_warning_with_auto():
+    enc = OrdinalEncoder()
+    X = [['Male'], ['Female']]
+    with pytest.warns(DeprecationWarning, match="From version 0.24, OrdinalEncoder's categories='auto' setting will not work with string-valued features, and categories='lexicographic', 'natural' or an explicit category order will be required."):
+        enc.fit_transform(X)
+    trans = enc.categories_
+    exp = [['Female', 'Male']]
+    assert_array_equal(trans, exp)
+
+
+def test_ordinal_encoder_with_non_strings_warning_with_natural():
+    enc = OrdinalEncoder(categories='natural')
+    X = [['Male', 1], ['Female', 3]]
+    with pytest.raises(ValueError, match="categories=natural can only be applied to strings in OrdinalEncoder"):
+        enc.fit_transform(X)
+
+
+def test_ordinal_encoder_with_non_strings_warning_with_lexicographic():
+    enc = OrdinalEncoder(categories='lexicographic')
+    X = [['Male', 1], ['Female', 3]]
+    with pytest.raises(ValueError, match="categories=lexicographic can only be applied to strings in OrdinalEncoder"):
+        enc.fit_transform(X)
+
+
+def test_ordinal_encoder_with_natural_strings():
+    enc = OrdinalEncoder(categories='natural')
+    X = [['Male'], ['Female']]
+    enc.fit_transform(X)
+    trans = enc.categories_
+    exp = [['Male', 'Female']]
+    assert_array_equal(trans, exp)
+
+
+def test_ordinal_encoder_with_lexicographic_strings():
+    enc = OrdinalEncoder(categories='lexicographic')
+    X = [['Male'], ['Female']]
+    enc.fit_transform(X)
+    trans = enc.categories_
+    exp = [['Female', 'Male']]
+    assert_array_equal(trans, exp)
