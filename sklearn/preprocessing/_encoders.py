@@ -5,6 +5,7 @@
 import numpy as np
 from scipy import sparse
 import numbers
+import warnings
 
 from ..base import BaseEstimator, TransformerMixin
 from ..utils import check_array, is_scalar_nan
@@ -78,17 +79,36 @@ class _BaseEncoder(TransformerMixin, BaseEstimator):
         X_list, n_samples, n_features = self._check_X(
             X, force_all_finite=force_all_finite)
 
-        if self.categories != 'auto':
+        EncoderType = self.__class__.__name__
+
+        if self.categories not in ['auto', 'natural', 'lexicographic']:
             if len(self.categories) != n_features:
                 raise ValueError("Shape mismatch: if categories is an array,"
                                  " it has to be of shape (n_features,).")
 
-        self.categories_ = []
+        elif EncoderType == 'OneHotEncoder' and self.categories in ['natural', 'lexicographic']:
+            raise ValueError("Shape mismatch: Only OrdinalEncoder supports " + self.categories + " categories")
 
+        self.categories_ = []
+        warnings.simplefilter('always', DeprecationWarning)
+        skipDepricationWarning = False
         for i in range(n_features):
             Xi = X_list[i]
-            if self.categories == 'auto':
-                cats = _unique(Xi)
+            if not(isinstance(Xi[0], str)) or self.categories != 'auto' or EncoderType == 'OneHotEncoder':
+                skipDepricationWarning = True
+            if EncoderType == 'OrdinalEncoder' and isinstance(Xi[0], str) and self.categories in ['auto', 'natural', 'lexicographic']:
+                if self.categories == 'auto':
+                    cats = _unique(Xi)
+                elif self.categories == 'natural':
+                    cats = Xi
+                elif self.categories == 'lexicographic':
+                    cats = _unique(Xi)
+                     
+            elif self.categories in ['natural', 'lexicographic']:
+                raise ValueError("categories=" + self.categories + " can only be applied to strings in OrdinalEncoder")
+
+            elif self.categories == 'auto':
+                cats = _unique(Xi)   
             else:
                 cats = np.array(self.categories[i], dtype=Xi.dtype)
                 if Xi.dtype.kind not in 'OU':
@@ -109,6 +129,9 @@ class _BaseEncoder(TransformerMixin, BaseEstimator):
                                " during fit".format(diff, i))
                         raise ValueError(msg)
             self.categories_.append(cats)
+
+        if not (skipDepricationWarning):
+            warnings.warn("From version 0.24, OrdinalEncoder's categories='auto' setting will not work with string-valued features, and categories='lexicographic', 'natural' or an explicit category order will be required.", DeprecationWarning)
 
     def _transform(self, X, handle_unknown='error', force_all_finite=True):
         X_list, n_samples, n_features = self._check_X(
@@ -246,7 +269,7 @@ class OneHotEncoder(_BaseEncoder):
         (if any).
 
     drop_idx_ : array of shape (n_features,)
-        - ``drop_idx_[i]`` is the index in ``categories_[i]`` of the category
+        - ``drop_idx_[i]`` is the index in ``categories_[i]`` of the category
           to be dropped for each feature.
         - ``drop_idx_[i] = None`` if no category is to be dropped from the
           feature with index ``i``, e.g. when `drop='if_binary'` and the
@@ -651,16 +674,16 @@ class OrdinalEncoder(_BaseEncoder):
 
     Parameters
     ----------
-    categories : 'auto' or a list of array-like, default='auto'
+    categories : 'auto', 'natural', 'lexicographic' or a list of array-like, default='auto'
         Categories (unique values) per feature:
-
         - 'auto' : Determine categories automatically from the training data.
+        - 'natural': keep the order of the input data.
+        - 'lexocographic': order the input data lexicographically.
         - list : ``categories[i]`` holds the categories expected in the ith
           column. The passed categories should not mix strings and numeric
           values, and should be sorted in case of numeric values.
-
         The used categories can be found in the ``categories_`` attribute.
-
+        
     dtype : number type, default np.float64
         Desired dtype of output.
 
@@ -767,6 +790,7 @@ class OrdinalEncoder(_BaseEncoder):
                             f"got {self.unknown_value}.")
 
         self._fit(X, force_all_finite='allow-nan')
+
 
         if self.handle_unknown == 'use_encoded_value':
             for feature_cats in self.categories_:
