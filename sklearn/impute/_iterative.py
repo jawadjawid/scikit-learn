@@ -1,4 +1,3 @@
-
 from time import time
 from collections import namedtuple
 import warnings
@@ -17,7 +16,6 @@ from ..utils._mask import _get_mask
 from ._base import _BaseImputer
 from ._base import SimpleImputer
 from ._base import _check_inputs_dtype
-
 
 _ImputerTriplet = namedtuple('_ImputerTriplet', ['feat_idx',
                                                  'neighbor_feat_idx',
@@ -228,10 +226,12 @@ class IterativeImputer(_BaseImputer):
                  max_value=np.inf,
                  verbose=0,
                  random_state=None,
-                 add_indicator=False):
+                 add_indicator=False,
+                 fill_nan_features=False):
         super().__init__(
             missing_values=missing_values,
-            add_indicator=add_indicator
+            add_indicator=add_indicator,
+            fill_nan_features=fill_nan_features
         )
 
         self.estimator = estimator
@@ -518,17 +518,41 @@ class IterativeImputer(_BaseImputer):
         if self.initial_imputer_ is None:
             self.initial_imputer_ = SimpleImputer(
                 missing_values=self.missing_values,
-                strategy=self.initial_strategy
+                strategy=self.initial_strategy,
+                fill_nan_features=self.fill_nan_features
             )
             X_filled = self.initial_imputer_.fit_transform(X)
         else:
             X_filled = self.initial_imputer_.transform(X)
 
-        valid_mask = np.flatnonzero(np.logical_not(
-            np.isnan(self.initial_imputer_.statistics_)))
+        valid_mask = []
+        if (self.fill_nan_features):
+            for i in range(len(X_filled[0])):
+                valid_mask.append(i)
+        else:
+            valid_mask = np.flatnonzero(np.logical_not(
+                np.isnan(self.initial_imputer_.statistics_)))
+
         Xt = X[:, valid_mask]
         mask_missing_values = mask_missing_values[:, valid_mask]
 
+        colWhereNan = []
+        for col in range(len(Xt[0])):
+            allNan = True
+            for row in range(len(Xt)):
+                if not np.isnan(Xt[row][col]):
+                    allNan = False
+                    break
+            if allNan:
+                colWhereNan.append(col)
+
+        if (self.fill_nan_features):
+            for row in range(len(mask_missing_values)):
+                for col in colWhereNan:
+                    mask_missing_values[row][col] = False
+                    X_missing_mask[row][col] = False
+                    Xt[row][col] = 0
+                    X_filled[row][col] = 0
         return Xt, X_filled, mask_missing_values, X_missing_mask
 
     @staticmethod
@@ -574,6 +598,9 @@ class IterativeImputer(_BaseImputer):
 
         y : ignored.
 
+        fill_nan_features: True/False
+        If fill_nan_features is False then remove the nan column. If it's True then replace nan with '0'
+        
         Returns
         -------
         Xt : array-like, shape (n_samples, n_features)
@@ -585,12 +612,12 @@ class IterativeImputer(_BaseImputer):
         if self.max_iter < 0:
             raise ValueError(
                 "'max_iter' should be a positive integer. Got {} instead."
-                .format(self.max_iter))
+                    .format(self.max_iter))
 
         if self.tol < 0:
             raise ValueError(
                 "'tol' should be a non-negative float. Got {} instead."
-                .format(self.tol)
+                    .format(self.tol)
             )
 
         if self.estimator is None:
@@ -605,7 +632,6 @@ class IterativeImputer(_BaseImputer):
 
         X, Xt, mask_missing_values, complete_mask = (
             self._initial_imputation(X, in_fit=True))
-
         super()._fit_indicator(complete_mask)
         X_indicator = super()._transform_indicator(complete_mask)
 
@@ -673,7 +699,7 @@ class IterativeImputer(_BaseImputer):
                 if self.verbose > 0:
                     print('[IterativeImputer] '
                           'Change: {}, scaled tolerance: {} '.format(
-                              inf_norm, normalized_tol))
+                        inf_norm, normalized_tol))
                 if inf_norm < normalized_tol:
                     if self.verbose > 0:
                         print('[IterativeImputer] Early stopping criterion '

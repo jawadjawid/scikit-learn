@@ -96,13 +96,15 @@ class KNNImputer(_BaseImputer):
            [5.5, 6. , 5. ],
            [8. , 8. , 7. ]])
     """
+
     @_deprecate_positional_args
     def __init__(self, *, missing_values=np.nan, n_neighbors=5,
                  weights="uniform", metric="nan_euclidean", copy=True,
-                 add_indicator=False):
+                 add_indicator=False, fill_nan_features=False):
         super().__init__(
             missing_values=missing_values,
-            add_indicator=add_indicator
+            add_indicator=add_indicator,
+            fill_nan_features=fill_nan_features
         )
         self.n_neighbors = n_neighbors
         self.weights = weights
@@ -163,12 +165,29 @@ class KNNImputer(_BaseImputer):
         X : array-like shape of (n_samples, n_features)
             Input data, where `n_samples` is the number of samples and
             `n_features` is the number of features.
-
+        
+        fill_nan_features: True/False
+        If fill_nan_features is False then remove the nan column. If it's True then replace nan with '0'
         Returns
         -------
         self : object
         """
         # Check data integrity and calling arguments
+        if (self.fill_nan_features):
+            colWhereNan = []
+            for col in range(len(X[0])):
+                allNan = True
+                for row in range(len(X)):
+                    if not np.isnan(X[row][col]):
+                        allNan = False
+                        break
+                if allNan:
+                    colWhereNan.append(col)
+
+            for row in range(len(X)):
+                for col in colWhereNan:
+                    X[row][col] = 0
+
         if not is_scalar_nan(self.missing_values):
             force_all_finite = True
         else:
@@ -257,7 +276,7 @@ class KNNImputer(_BaseImputer):
 
                 # distances for samples that needed imputation for column
                 dist_subset = (dist_chunk[dist_idx_map[receivers_idx] - start]
-                               [:, potential_donors_idx])
+                [:, potential_donors_idx])
 
                 # receivers with all nan distances impute with mean
                 all_nan_dist_mask = np.isnan(dist_subset).all(axis=1)
@@ -276,7 +295,7 @@ class KNNImputer(_BaseImputer):
                     receivers_idx = receivers_idx[~all_nan_dist_mask]
                     dist_subset = (dist_chunk[dist_idx_map[receivers_idx]
                                               - start]
-                                   [:, potential_donors_idx])
+                    [:, potential_donors_idx])
 
                 n_neighbors = min(self.n_neighbors, len(potential_donors_idx))
                 value = self._calc_impute(

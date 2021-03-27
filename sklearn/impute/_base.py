@@ -71,9 +71,10 @@ class _BaseImputer(TransformerMixin, BaseEstimator):
     It adds automatically support for `add_indicator`.
     """
 
-    def __init__(self, *, missing_values=np.nan, add_indicator=False):
+    def __init__(self, *, missing_values=np.nan, add_indicator=False, fill_nan_features=False):
         self.missing_values = missing_values
         self.add_indicator = add_indicator
+        self.fill_nan_features = fill_nan_features
 
     def _fit_indicator(self, X):
         """Fit a MissingIndicator."""
@@ -109,7 +110,7 @@ class _BaseImputer(TransformerMixin, BaseEstimator):
                 "Data from the missing indicator are not provided. Call "
                 "_fit_indicator and _transform_indicator in the imputer "
                 "implementation."
-                )
+            )
 
         return hstack((X_imputed, X_indicator))
 
@@ -211,12 +212,14 @@ class SimpleImputer(_BaseImputer):
     upon :meth:`transform` if strategy is not "constant".
 
     """
+
     @_deprecate_positional_args
     def __init__(self, *, missing_values=np.nan, strategy="mean",
-                 fill_value=None, verbose=0, copy=True, add_indicator=False):
+                 fill_value=None, verbose=0, copy=True, add_indicator=False, fill_nan_features=False):
         super().__init__(
             missing_values=missing_values,
-            add_indicator=add_indicator
+            add_indicator=add_indicator,
+            fill_nan_features=fill_nan_features
         )
         self.strategy = strategy
         self.fill_value = fill_value
@@ -236,7 +239,7 @@ class SimpleImputer(_BaseImputer):
             # with strategy='most_frequent' or 'constant'
             # because the list is converted to Unicode numpy array
             if isinstance(X, list) and \
-               any(isinstance(elem, str) for row in X for elem in row):
+                    any(isinstance(elem, str) for row in X for elem in row):
                 dtype = object
             else:
                 dtype = None
@@ -280,12 +283,30 @@ class SimpleImputer(_BaseImputer):
         X : {array-like, sparse matrix}, shape (n_samples, n_features)
             Input data, where ``n_samples`` is the number of samples and
             ``n_features`` is the number of features.
+        
+        fill_nan_features: True/False
+        If fill_nan_features is False then remove the nan column. If it's True then replace nan with '0'
 
         Returns
         -------
         self : SimpleImputer
         """
         X = self._validate_input(X, in_fit=True)
+
+        if (self.fill_nan_features):
+            colWhereNan = []
+            for col in range(len(X[0])):
+                allNan = True
+                for row in range(len(X)):
+                    if not np.isnan(X[row][col]):
+                        allNan = False
+                        break
+                if allNan:
+                    colWhereNan.append(col)
+
+            for row in range(len(X)):
+                for col in colWhereNan:
+                    X[row][col] = 0
 
         # default fill_value is 0 for numerical input and "missing_value"
         # otherwise
@@ -440,7 +461,7 @@ class SimpleImputer(_BaseImputer):
         missing_mask = _get_mask(X, self.missing_values)
 
         # Delete the invalid columns if strategy is not constant
-        if self.strategy == "constant":
+        if self.fill_nan_features or self.strategy == "constant":
             valid_statistics = statistics
             valid_statistics_indexes = None
         else:
@@ -620,6 +641,7 @@ class MissingIndicator(TransformerMixin, BaseEstimator):
            [False, False]])
 
     """
+
     @_deprecate_positional_args
     def __init__(self, *, missing_values=np.nan, features="missing-only",
                  sparse="auto", error_on_new=True):
@@ -749,7 +771,7 @@ class MissingIndicator(TransformerMixin, BaseEstimator):
                              "'all'. Got {} instead.".format(self.features))
 
         if not ((isinstance(self.sparse, str) and
-                self.sparse == "auto") or isinstance(self.sparse, bool)):
+                 self.sparse == "auto") or isinstance(self.sparse, bool)):
             raise ValueError("'sparse' has to be a boolean or 'auto'. "
                              "Got {!r} instead.".format(self.sparse))
 
