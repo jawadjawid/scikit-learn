@@ -18,7 +18,7 @@ from sklearn.experimental import enable_iterative_imputer  # noqa
 
 from sklearn.datasets import load_diabetes
 from sklearn.impute import MissingIndicator
-from sklearn.impute import SimpleImputer, IterativeImputer
+from sklearn.impute import SimpleImputer, IterativeImputer, KNNImputer
 from sklearn.dummy import DummyRegressor
 from sklearn.linear_model import BayesianRidge, ARDRegression, RidgeCV
 from sklearn.pipeline import Pipeline
@@ -1500,3 +1500,57 @@ def test_most_frequent(expected, array, dtype, extra_value, n_repeat):
     assert expected == _most_frequent(
         np.array(array, dtype=dtype), extra_value, n_repeat
     )
+
+
+@pytest.mark.parametrize("strategy",
+                         ["mean", "median", "most_frequent", "constant"])
+def test_simple_imputer_fill_nan_features(strategy):
+    X = np.array([[1, np.nan, 3], [np.nan, np.nan, 6]])
+
+    # create imputer and fit transform it
+    imp = SimpleImputer(strategy=strategy, fill_nan_features=True)
+    X_fitTrans = imp.fit_transform(X)
+    X_trans = imp.transform(X)
+
+    # check the shape of the matrix is the same (Did not remove a nan column)
+    assert X.shape == X_fitTrans.shape
+    assert X.shape == X_trans.shape
+    # check same result
+    assert_array_equal(X_fitTrans, X_trans)
+    # check nan replaced with 0s
+    assert (X_fitTrans[:, 1] == 0).all()
+
+
+@pytest.mark.parametrize("initial_strategy",
+                         ["mean", "median", "most_frequent", "constant"])
+def test_iterative_imputer_fill_nan_features(initial_strategy):
+    X = np.array([[1, np.nan, 3], [np.nan, np.nan, 6]])
+
+    # create imputer and fit transform it
+    imp = IterativeImputer(initial_strategy=initial_strategy, fill_nan_features=True)
+    X_fitTrans = imp.fit_transform(X)
+    X_trans = imp.fit(X).transform(X)
+
+    # check the shape of the matrix is the same (Did not remove a nan column)
+    assert X.shape == X_fitTrans.shape
+    assert X.shape == X_trans.shape
+    # check same result
+    assert_array_equal(X_fitTrans, X_trans)
+    # check nan replaced with 0s
+    assert (X_fitTrans[:, 1] == 0).all()
+
+
+def test_knn_imputer_fill_nan_features():
+    X = np.array([[1, np.nan, 3], [np.nan, np.nan, 6]])
+    # create imputer and fit transform it
+    imp = KNNImputer(fill_nan_features=True)
+    X_fitTrans = imp.fit_transform(X)
+    X_trans = imp.transform(X)
+
+    # check the shape of the matrix is the same (Did not remove a nan column)
+    assert X.shape == X_fitTrans.shape
+    assert X.shape == X_trans.shape
+    # check same result
+    assert_array_equal(X_fitTrans, X_trans)
+    # keep the nan values if not 
+    assert (X_fitTrans[:, 1] == 0).all()
